@@ -16,6 +16,10 @@ class RunMode(Enum):
     SEND_MSG_MODE = 2
     BACK_TEST_MODE = 3
 
+class PrintMode(Enum):
+    PRINT_PRICE = 1
+    PRINT_MONEY = 2
+
 class PriceMode(Enum):
     INTER_SHOCK = 1
     PRICE_LOW = 2
@@ -86,7 +90,7 @@ class PositionCtrl:
         self.posi_coff = (self.total_money/100000.0)
         self.single_speculate_money = 100000.0/3
         self.one_layer_money = 100000.0/10
-    def take_posi(self, stock, p_index, data, context):
+    def take_posi(self, stock, p_index, data, context, b_buy_list):
         if -1 == p_index:
             return " ,pindex error "
         remaid_cash = context.subportfolios[p_index].available_cash
@@ -102,7 +106,7 @@ class PositionCtrl:
         if None == ret_obj:
             log.info("take_posi error!")
             return " ,buy amount 0 "
-        modify_stock_trade_state(stock)
+        b_buy_list[0] = True
         return (" ,buy amount " + str(int(cash/one_hand_money)*100))
     def clear_posi(self, stock, p_index, data, context):
         if -1 == p_index:
@@ -180,7 +184,7 @@ class DataAnalyzeBase:
             return mode_ret
         avg_type = 10
         ret_ma = talib.MA(val_list.values, timeperiod=avg_type, matype=0)
-        mean_series = ret_ma[avg_type - 1:g.total_day]
+        mean_series = ret_ma[avg_type:g.total_day]
         df_close = sort(mean_series)
         now_mean_val = (val_list.head(10).sum() - val_list.head(5).sum())/5
         min_mean_val = df_close[0:5].mean()
@@ -527,7 +531,7 @@ class DataModel:
         
 #判断买卖点****************************************************************************************************
 class JudgeTradePoint:
-    def __init__(self, posiClass, dataModel, stock_list):
+    def __init__(self, posiClass, dataModel, stock_list, stocksPosiInfo):
         self.b_up_hook = False
         self.b_down_hook = False
         self.b_send_buy_msg = {}
@@ -537,6 +541,7 @@ class JudgeTradePoint:
         self.b_money_wave = {}
         self.dataCtrl = dataModel
         self.positionCtrl = posiClass
+        self.stocksMng = stocksPosiInfo
         self.__update_stock_dict_info(stock_list)
     def __update_stock_dict_info(self, stock_list):
         for m_single_sec in stock_list:
@@ -559,7 +564,10 @@ class JudgeTradePoint:
             current_price = data[m_sec].close
             change_str = self.__rate_str(PrintMode.PRINT_PRICE, m_sec, current_price, self.dataCtrl.get_last_day_close_price(m_sec))
             if False == self.b_send_buy_msg[m_sec]:
-                change_str += self.positionCtrl.take_posi(m_sec, self.dataCtrl.get_pindex_by_stock(m_sec), data, context)
+                b_buy_list = [False]
+                change_str += self.positionCtrl.take_posi(m_sec, self.dataCtrl.get_pindex_by_stock(m_sec), data, context, b_buy_list)
+                if True == b_buy_list[0]:
+                    self.stocksMng.modify_stock_trade_state(m_sec)
                 self.b_send_buy_msg[m_sec] = True
             self.__send_msg_to_user(change_str)
     def __deal_price_BreakThrough(self, data, context, stock):
@@ -610,9 +618,9 @@ class JudgeTradePoint:
     def deal_money_wave(self, context, m_stock, data):
         time_now = context.current_dt
         if (9 == time_now.hour and time_now.minute < 40):
-            money_rate = 8
+            money_rate = 10
         else:
-            money_rate = 5
+            money_rate = 10
         wave_rate = 0.01   #提高价格波动要求
         volume_last_1_min = history(1,'1m','money',m_stock).sum()[m_stock]
         current_price = data[m_stock].close
@@ -690,6 +698,7 @@ class AnalyStock:
     def __init__(self, stocksManage):
         self.calc_line_k = 0
         self.m_stocksManage = stocksManage
+        self.judgeDragon = JudgeDragon()
         stock_list = []    #TODO
     @calc_time
     def dragon_main(self):
@@ -701,8 +710,7 @@ class AnalyStock:
             self.__deal_dragon_stock(stock)
         #log.info('inter = %d, total = %d'%(g.inter_stock, g.total_stock))
     def __deal_dragon_stock(self, stock):
-        judgeDragon = JudgeDragon()
-        dragon_type = judgeDragon.get_dragon_type(stock)
+        dragon_type = self.judgeDragon.get_dragon_type(stock)
         #log.info(dragon_type)
         if (DragonType.DRAGON_NONE == dragon_type):
             return
@@ -799,12 +807,33 @@ def get_m_end_date(context):
     timeTool = TimeTool()
     m_today = context.current_dt
     g.m_end_date = timeTool.get_end_data(m_today)
-    
-class StocksMng:
+
+class PosiInfoInterface:
     def __init__(self):
-        self.m_stocks_list = []
-        self.init_my_cash()
-    def init_my_cash(self):
+        pass
+    def add_g_stock_list(self, stock_list):
+        pass
+    def return_trade_stocks(self):
+        pass
+    def modify_stock_trade_state(self, stock):
+        pass
+    def delete_trade_stock(self, context):
+        pass
+    def get_pindex_by_stock(self, stock):
+        pass
+    def print_stocks(self):
+        pass
+    def before_trading_posi_action(self, context):
+        pass
+    def sync_firm_position(self):
+        pass
+
+class StocksMngBackTest(PosiInfoInterface):
+    def __init__(self):
+        PosiInfoInterface.__init__(self)
+        self.m_stocks_struct_list = []
+        self.__init_my_cash()
+    def __init_my_cash(self):
         # 最多10个仓位
         init_cash = 100000.0/3.0
         set_subportfolios([SubPortfolioConfig(cash=init_cash, type='stock'),\
@@ -820,7 +849,7 @@ class StocksMng:
     def add_g_stock_list(self, stock_list):
         if True == self.__is_stock_in_trade_list(stock_list[0]):
             return
-        self.m_stocks_list.append(stock_list)
+        self.m_stocks_struct_list.append(stock_list)
     def __is_date_outgoing(self, date1, date2):
         date1_list = date1.split('-')
         timeTuple1 = datetime.datetime(int(date1_list[0]), int(date1_list[1]), int(date1_list[2]))
@@ -831,8 +860,12 @@ class StocksMng:
             return True
         else:
             return False
+    def return_trade_stocks(self):
+        trade_list = [stock_list[0] for stock_list in self.m_stocks_struct_list]
+        self.m_posi_stock_list = trade_list
+        return trade_list
     def __is_stock_in_trade_list(self, stock):
-        trade_list = [stock_list[0] for stock_list in self.m_stocks_list]
+        trade_list = self.return_trade_stocks()
         if stock in trade_list:
             return True
         else:
@@ -843,31 +876,40 @@ class StocksMng:
         else:
             return False
     def modify_stock_trade_state(self, stock):
-        for index, stock_list in enumerate(self.m_stocks_list):
+        for index, stock_list in enumerate(self.m_stocks_struct_list):
             if stock in stock_list:
                 stock_list[2] = True
-                self.m_stocks_list[index] = stock_list
+                self.m_stocks_struct_list[index] = stock_list
                 return
-    def del_trade_stock(self, context):
-        if 0 == len(self.m_stocks_list):
+    def delete_trade_stock(self, context):
+        if 0 == len(self.m_stocks_struct_list):
             return
-        for pindex, stock_list in enumerate(self.m_stocks_list):
+        for pindex, stock_list in enumerate(self.m_stocks_struct_list):
             if True == stock_list[2]:
                 if True == self.__is_posi_clear(pindex, context):
-                    self.m_stocks_list.remove(stock_list)
+                    self.m_stocks_struct_list.remove(stock_list)
             else:
                 if True == self.__is_date_outgoing(stock_list[1], context.current_dt):
-                    self.m_stocks_list.remove(stock_list)
+                    self.m_stocks_struct_list.remove(stock_list)
+    def before_trading_posi_action(self, context):
+        self.delete_trade_stock(context)
+    def get_pindex_by_stock(self, stock):
+        if 0 == len(self.m_posi_stock_list):
+            return -1
+        if stock in self.m_posi_stock_list:
+            return self.m_posi_stock_list.index(stock)
+        else:
+            return -1
     def print_stocks(self):
-        log.info(self.m_stocks_list)
+        log.info(self.m_stocks_struct_list)
 
-#消息发送**************************************************************************************************
-class SendMsg:
-    def __init__(self, context, stock_list):
+#实盘交易**************************************************************************************************
+class FirmBargain:
+    def __init__(self, context, stock_list, stocksPosiInfo):
         self.m_security = stock_list
         self.dataClass = DataModel(context, stock_list)
         self.posiClass = PositionCtrl()
-        self.judgeTradePoint = JudgeTradePoint(self.posiClass, self.dataClass, stock_list)
+        self.judgeTradePoint = JudgeTradePoint(self.posiClass, self.dataClass, stock_list, stocksPosiInfo)
         self.__init_val(context)
     def __init_val(self, context):
         self.sse_last_day_price = attribute_history('000001.XSHG', 1, '1d', ['close'])['close'][-1]
@@ -893,32 +935,69 @@ class SendMsg:
             send_message(change_str) 
             self.sse_last_price = current_price
 
-g.run_mode = RunMode.SELECT_STOCK_MODE
+#g.run_mode = RunMode.SELECT_STOCK_MODE
+g.run_mode = RunMode.SEND_MSG_MODE
+#g.run_mode = RunMode.BACK_TEST_MODE
+
+class StocksMngFirm(PosiInfoInterface):
+    def __init__(self):
+        PosiInfoInterface.__init__(self)
+        self.__init_my_cash()
+    def __init_my_cash(self):
+        # 最多10个仓位
+        init_cash = 100000.0/3.0
+        set_subportfolios([SubPortfolioConfig(cash=init_cash, type='stock'),\
+        SubPortfolioConfig(cash=init_cash, type='stock'),\
+        SubPortfolioConfig(cash=init_cash, type='stock'),\
+        SubPortfolioConfig(cash=init_cash, type='stock'),\
+        SubPortfolioConfig(cash=init_cash, type='stock'),\
+        SubPortfolioConfig(cash=init_cash, type='stock'),\
+        SubPortfolioConfig(cash=init_cash, type='stock'),\
+        SubPortfolioConfig(cash=init_cash, type='stock'),\
+        SubPortfolioConfig(cash=init_cash, type='stock'),\
+        SubPortfolioConfig(cash=init_cash, type='stock')])
+    def sync_firm_position(self, pindex, amount):
+        inventory = 100000
+        remain_stock = 300
+    def before_trading_posi_action(self, context):
+        self.sync_firm_position()
+        #
+#实盘股票列表*******************************************************************************************************
+    def return_trade_stocks(self):
+        return ['600795.XSHG']
+
+class RunContainer:
+    def __init__(self, stocks_posi_info):
+        self.stocksMng = stocks_posi_info
+    def before_trading_action(self, context):
+        get_m_end_date(context)
+        self.stocksMng.before_trading_posi_action(context)
+        self.sendMsgClass = FirmBargain(context, self.stocksMng.return_trade_stocks(), self.stocksMng)
+    def trading_action(self, context, data):
+        if RunMode.SEND_MSG_MODE == g.run_mode or RunMode.BACK_TEST_MODE == g.run_mode:
+            self.sendMsgClass.deal_sse_change(data)
+            self.sendMsgClass.deal_stock_change(context, data)
+    def after_trading_action(self, context):
+        if RunMode.SELECT_STOCK_MODE == g.run_mode or RunMode.BACK_TEST_MODE == g.run_mode:
+            analyStock = AnalyStock(self.stocksMng)
+            analyStock.dragon_main()
+        self.stocksMng.print_stocks()
                 
 def initialize(context):
-    g.stocksMng = StocksMng()
-    pass
-
-#def after_code_changed(context):
-#    pass
-
+    g.stocksMngBackTet = StocksMngBackTest()
+    g.stocksMngFirm = StocksMngFirm()
+    if RunMode.SELECT_STOCK_MODE == g.run_mode or RunMode.BACK_TEST_MODE == g.run_mode:
+        g.RunContainer = RunContainer(g.stocksMngBackTet)
+    elif RunMode.SEND_MSG_MODE == g.run_mode:
+        g.RunContainer = RunContainer(g.stocksMngFirm)
+    
 def before_trading_start(context):
-    get_m_end_date(context)
-    g.stocksMng.del_trade_stock(context)
-    g.sendMsgClass = SendMsg(context, ['600795.XSHG', '603167.XSHG'])
-    pass
-    
+    g.RunContainer.before_trading_action(context)
 def after_trading_end(context):
-    if RunMode.SELECT_STOCK_MODE == g.run_mode:
-        analyStock = AnalyStock(g.stocksMng)
-        analyStock.dragon_main()
-        g.stocksMng.print_stocks()
-    
-# 每个单位时间(如果按天回测,则每天调用一次,如果按分钟,则每分钟调用一次)调用一次
+    g.RunContainer.after_trading_action(context)
 def handle_data(context, data):
-    if RunMode.SEND_MSG_MODE == g.run_mode:
-        g.sendMsgClass.deal_sse_change(data)
-        g.sendMsgClass.deal_stock_change(context, data)
+    g.RunContainer.trading_action(context, data)
+    
         
 
     
