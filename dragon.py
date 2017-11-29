@@ -393,7 +393,11 @@ class GetStockScore(DataAnalyzeBase):
             return 0
         last_net = 0.0
         for last_date_item in last_date_list:
-            last_net += get_fundamentals(q_income, statDate  = last_date_item)['net_profit'][0]
+            try:
+                last_net += get_fundamentals(q_income, statDate  = last_date_item)['net_profit'][0]
+            except:
+                log.info("get_fundamentals error!")
+                return 0
         net_grouth_rate = (now_net - last_net) / last_net
         ret_rate_int = 0
         #log.info("now_pe = %f, now_net = %f, last_net = %f, net_grouth_rate = %f"%(now_pe, now_net, last_net, net_grouth_rate))
@@ -464,6 +468,7 @@ class DataModel:
         self.last_up_alarm_time = {}
         self.last_down_alarm_time = {}
         self.last_money_wave_alarm_time = {}
+        self.dict_breakdown_times = {}
         self.__set_val_dict(context, stock_list)
         self.__init_wave_rate(stock_list)
     def __set_val_dict(self, context, stock_list):
@@ -489,6 +494,18 @@ class DataModel:
             else:
                 self.dict_up_wave_rate[stock] = 0.015
                 self.dict_down_wave_rate[stock] = 0.020
+            if True == self.__is_amplitude_anomaly(stock):
+                self.dict_up_wave_rate[stock] = 0.015
+                self.dict_down_wave_rate[stock] = 0.03
+            self.dict_breakdown_times[stock] = 0
+    def __is_amplitude_anomaly(self, stock):
+        close_data = attribute_history(stock, 10, '1d', ['close'])
+        max_close = close_data['close'].max()
+        min_close = close_data['close'].min()
+        amplitude = (max_close - min_close)/min_close
+        if amplitude > 0.25:
+            return True
+        return False
     def get_pindex_by_stock(self, stock):
         if 0 == len(self.m_posi_stock_list):
             return -1
@@ -528,6 +545,13 @@ class DataModel:
         return self.last_money_wave_alarm_time[stock]
     def set_last_money_wave_alarm_time(self, stock, val):
         self.last_money_wave_alarm_time[stock] = val
+    def add_breakdown_times(self, stock):
+        self.dict_breakdown_times[stock] += 1
+    def is_breakdown_times_right(self, stock):
+        if self.dict_breakdown_times[stock] <= 2:
+            return True
+        else:
+            return False
         
 #判断买卖点****************************************************************************************************
 class JudgeTradePoint:
@@ -569,7 +593,8 @@ class JudgeTradePoint:
                 if True == b_buy_list[0]:
                     self.stocksMng.modify_stock_trade_state(m_sec)
                 self.b_send_buy_msg[m_sec] = True
-            self.__send_msg_to_user(change_str)
+            if True == self.dataCtrl.is_breakdown_times_right(m_sec):
+                self.__send_msg_to_user(change_str)
     def __deal_price_BreakThrough(self, data, context, stock):
         if True == self.b_price_up[stock]:
             return
@@ -613,6 +638,7 @@ class JudgeTradePoint:
             return False
         else:
             self.b_price_down[m_sec] = False
+            self.dataCtrl.add_breakdown_times(m_sec)
             return True
     #量能比前三日放量，价格波动满足条件，触发买卖点
     def deal_money_wave(self, context, m_stock, data):
@@ -825,7 +851,7 @@ class PosiInfoInterface:
         pass
     def before_trading_posi_action(self, context):
         pass
-    def sync_firm_position(self):
+    def sync_firm_position(self, context, data):
         pass
 
 class StocksMngBackTest(PosiInfoInterface):
@@ -918,7 +944,7 @@ class FirmBargain:
     def deal_stock_change(self, context, data):
         for m_sec in self.m_security:
             self.__judge_price_wave(context, m_sec, data)
-            self.__judge_money_wave(context, m_sec, data)
+            #self.__judge_money_wave(context, m_sec, data)
     def __judge_price_wave(self, context, m_sec, data):
         self.judgeTradePoint.deal_price_wave(m_sec, data, context)
     def __judge_money_wave(self, context, m_sec, data):
@@ -935,19 +961,18 @@ class FirmBargain:
             send_message(change_str) 
             self.sse_last_price = current_price
 
-#g.run_mode = RunMode.SELECT_STOCK_MODE
-g.run_mode = RunMode.SEND_MSG_MODE
-#g.run_mode = RunMode.BACK_TEST_MODE
-
 class StocksMngFirm(PosiInfoInterface):
     def __init__(self):
         PosiInfoInterface.__init__(self)
         self.__init_my_cash()
+        self.b_need_sync_firm = True
     def __init_my_cash(self):
         # 最多10个仓位
         init_cash = 100000.0/3.0
-        set_subportfolios([SubPortfolioConfig(cash=init_cash, type='stock'),\
-        SubPortfolioConfig(cash=init_cash, type='stock'),\
+        inventory1 = 30000
+        inventory2 = 30000
+        set_subportfolios([SubPortfolioConfig(cash=inventory1, type='stock'),\
+        SubPortfolioConfig(cash=inventory2, type='stock'),\
         SubPortfolioConfig(cash=init_cash, type='stock'),\
         SubPortfolioConfig(cash=init_cash, type='stock'),\
         SubPortfolioConfig(cash=init_cash, type='stock'),\
@@ -956,15 +981,44 @@ class StocksMngFirm(PosiInfoInterface):
         SubPortfolioConfig(cash=init_cash, type='stock'),\
         SubPortfolioConfig(cash=init_cash, type='stock'),\
         SubPortfolioConfig(cash=init_cash, type='stock')])
-    def sync_firm_position(self, pindex, amount):
-        inventory = 100000
-        remain_stock = 300
-    def before_trading_posi_action(self, context):
-        self.sync_firm_position()
-        #
+    def sync_firm_position(self, context, data):
+        if True == self.b_need_sync_firm:
+            pindex1 = 0
+            remain_stock_num1 = 2200
+            self.sync_stock_num(pindex1, remain_stock_num1, context, data)
+            pindex2 = 1
+            remain_stock_num2 = 3000
+            #self.sync_stock_num(pindex2, remain_stock_num2, context, data)
+    def sync_stock_num(self, p_index, remain_stock_num, context, data):
+        if -1 == p_index:
+            return " ,pindex error "
+        remaid_cash = context.subportfolios[p_index].available_cash
+        stock_list = self.return_trade_stocks()
+        stock = stock_list[p_index]
+        current_price = data[stock].close
+        cash = remain_stock_num * current_price
+        if remaid_cash < cash:
+            log.info("sync firm cash error!")
+            return
+        #log.info(cash)
+        ret_obj = order_value(stock, cash, pindex = p_index)
+        if None == ret_obj:
+            log.info("sync firm error!")
+        self.show_posi_info(p_index, context, current_price)
+        self.b_need_sync_firm = False
+        return
+    def show_posi_info(self, p_index, context, current_price):
+        remaid_cash = context.subportfolios[p_index].available_cash
+        posi_val = context.subportfolios[p_index].positions_value
+        stock_amount = posi_val/current_price
+        log.info("remaid_cash = %f, stock_amount = %f"%(remaid_cash, stock_amount))
+    def after_trading_posi_action(self):
+        pass
+        #self.show_posi_info(0)
 #实盘股票列表*******************************************************************************************************
     def return_trade_stocks(self):
-        return ['600795.XSHG']
+        #return ['603167.XSHG']
+        return ['601222.XSHG']
 
 class RunContainer:
     def __init__(self, stocks_posi_info):
@@ -977,11 +1031,16 @@ class RunContainer:
         if RunMode.SEND_MSG_MODE == g.run_mode or RunMode.BACK_TEST_MODE == g.run_mode:
             self.sendMsgClass.deal_sse_change(data)
             self.sendMsgClass.deal_stock_change(context, data)
+            self.stocksMng.sync_firm_position(context, data)
     def after_trading_action(self, context):
         if RunMode.SELECT_STOCK_MODE == g.run_mode or RunMode.BACK_TEST_MODE == g.run_mode:
             analyStock = AnalyStock(self.stocksMng)
             analyStock.dragon_main()
         self.stocksMng.print_stocks()
+
+#g.run_mode = RunMode.SELECT_STOCK_MODE
+g.run_mode = RunMode.SEND_MSG_MODE
+#g.run_mode = RunMode.BACK_TEST_MODE
                 
 def initialize(context):
     g.stocksMngBackTet = StocksMngBackTest()
