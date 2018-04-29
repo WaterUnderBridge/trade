@@ -148,4 +148,5 @@ def math_test():
 	print(ytm)
 
 if __name__ == '__main__':
-	math_test()
+	ret = get_init_from_annuity(39600, 0.048, 30)
+	print(ret)
