@@ -3,7 +3,14 @@ import numpy as np
 import pandas as pd
 from pandas import Series,DataFrame
 import matplotlib.pyplot as plt
+import math
 from common import *
+
+def is_equal(a,b):
+	if math.fabs(a - b) < 0.000001:
+		return True
+	else:
+		return False
 
 def test_equal(a,b):
 	if a != b:
@@ -27,6 +34,14 @@ def se_sort_test():
 	assert(2 == sort_se2.iloc[4])
 	assert(6 == sort_se2[0:3].mean())
 
+def pd_shift_test():
+	pd_test = DataFrame({'a':[1,2,3],'b':[4,5,6]})
+	pd_shift = pd_test.shift()
+	assert(True == is_equal(pd_shift['a'][1],1))
+
+def pd_query_test():
+	pass
+
 def add_test():
 	test_equal(3, add(1,2))
 	test_not_equal(4, add(1,2))
@@ -34,6 +49,8 @@ def add_test():
 def test_cases():
 	add_test()
 	se_sort_test()
+	pd_shift_test()
+	pd_query_test()
 
 if __name__ == '__main__':
 	test_cases()

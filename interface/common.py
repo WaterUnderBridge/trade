@@ -39,8 +39,24 @@ def test_func():
 	df = pd.read_csv('szstudy.csv')
 	money_se = get_ma5(df['money'])
 	judge_money_increase(money_se,df['date'])
-	print('nihao')
+
+#高开或低开后，收盘同向次数
+def close_open_test():
+	df = pd.read_csv('szstudy.csv')
+	df_shift = df.shift()
+	open_se = df['open']
+	close_se = df['close']
+	close_shift = df_shift['close']
+	close_gain = (close_se - close_shift)/close_shift
+	open_gain = (open_se - close_shift)/close_shift
+	gain_df = DataFrame({'close_gain':close_gain,'open_gain':open_gain})
+	gain_df.index = df['date'].values
+	query_df = gain_df.query('(close_gain >= 0 and open_gain >= 0) or (close_gain <= 0 and open_gain <= 0)')
+	print(query_df)
+
+
 
 if __name__ == '__main__':
 	print("hello world!")
-	test_func()
+	#test_func()
+	close_open_test()
