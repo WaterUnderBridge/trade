@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 from pandas import Series,DataFrame
 import matplotlib.pyplot as plt
+import statsmodels.api as sm
 
 def add(a,b):
 	return (a+b)
@@ -34,8 +35,8 @@ def judge_money_increase(money_se, date_list):
     		if money_gain > 2.5:
     			print(money_gain, m_index, date_list[m_index])
      
-
-def test_func():
+#量能放大
+def test_money():
 	df = pd.read_csv('szstudy.csv')
 	money_se = get_ma5(df['money'])
 	judge_money_increase(money_se,df['date'])
@@ -54,9 +55,33 @@ def close_open_test():
 	query_df = gain_df.query('(close_gain >= 0 and open_gain >= 0) or (close_gain <= 0 and open_gain <= 0)')
 	print(query_df)
 
+#收盘价拟合
+def close_fit():
+	calc_len = 50
+	df = pd.read_csv('szstudy.csv')
+	close_se = df['close']
+	k_list = []
+	for index in range(0, len(close_se), calc_len):
+		if index < len(close_se) - calc_len:
+			x_data = range(index, index + calc_len, 1)
+			x_array = np.array(x_data)
+			x_sm = sm.add_constant(x_array)
+			y_sm = np.array(close_se[index:index + calc_len].values)
+			model = sm.OLS(y_sm, x_sm)
+			results = model.fit()
+			k_list.append(results.params[1])
+			y_fitted = results.fittedvalues
+			plt.plot(x_array, y_sm,label = 'data')
+			plt.plot(x_array, y_fitted, 'b--', label = 'ols')
+	#plt.legend(loc = 'best')
+	plt.show()
+	x_list = list(range(len(k_list)))
+	plt.plot(x_list, k_list, 'go')
+	plt.show()
 
 
 if __name__ == '__main__':
 	print("hello world!")
-	#test_func()
-	close_open_test()
+	#test_money()
+	#close_open_test()
+	close_fit()
