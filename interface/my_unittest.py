@@ -35,12 +35,18 @@ def se_sort_test():
 	assert(6 == sort_se2[0:3].mean())
 
 def pd_shift_test():
-	pd_test = DataFrame({'a':[1,2,3],'b':[4,5,6]})
+	pd_test = DataFrame({'a':[1,2,3],'b':[4,5,6]}, index = ['line1','line2','line3'])
 	pd_shift = pd_test.shift()
 	assert(True == is_equal(pd_shift['a'][1],1))
+	assert(True == is_equal(pd_test.loc['line2','b'],5))
+	assert(True == is_equal(pd_test.iloc[1,1],5))
 
 def pd_query_test():
-	pass
+	pd_test = DataFrame({'a':[1,-2,3],'b':[4,5,-6]}, index = ['line1','line2','line3'])
+	pd_query = pd_test.query('a > 0')
+	assert(True == is_equal(pd_test.iloc[1,0],-2))
+	assert(True == is_equal(pd_query.iloc[1,0],3))
+	#print(pd_query)
 
 def add_test():
 	test_equal(3, add(1,2))

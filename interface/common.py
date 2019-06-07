@@ -151,6 +151,8 @@ def chip_distribution():
 		scope_ratio = scope_se * one_ratio
 		price_ratio_se = price_ratio_se*(1 - one_ratio)
 		price_ratio_se = price_ratio_se + scope_ratio
+	if False == float_is_equal(price_ratio_se.sum(), 1):
+			print("price_ratio_se error!")
 	price_ratio_se.plot('bar')
 	plt.show()
 	#print(price_ratio_se)
