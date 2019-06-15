@@ -108,7 +108,7 @@ def chip_distribution():
 	price_ratio_dict = {}
 	for i in range(price_num):
 		if i == price_num - 1:
-			price_ratio_dict[start_price + inter_len*i] = 0
+			price_ratio_dict[start_price + inter_len*i] = 0    #终点用于计算
 		else:
 			price_ratio_dict[start_price + inter_len*i] = float_div(1, section_num)
 	price_ratio_se = Series(price_ratio_dict)    #价格区间以起始值作为代表
@@ -124,7 +124,7 @@ def chip_distribution():
 		high_price = df.loc[one_day,'high']
 		low_price = df.loc[one_day,'low']
 		one_ratio = df.loc[one_day,'volume']
-		if high_price >= end_price or low_price <= start_price:
+		if high_price > end_price or low_price < start_price:
 			print("price scope error!")
 		scope_dict = {}
 		for i,single_price in enumerate(ratio_index):
@@ -151,10 +151,35 @@ def chip_distribution():
 		scope_ratio = scope_se * one_ratio
 		price_ratio_se = price_ratio_se*(1 - one_ratio)
 		price_ratio_se = price_ratio_se + scope_ratio
-	if False == float_is_equal(price_ratio_se.sum(), 1):
+	if False == float_is_equal(price_ratio_se.sum(), 1):    #一致性约束
 			print("price_ratio_se error!")
+	now_price = 17.86
+	now_index = 0
+	for i,single_price in enumerate(ratio_index):
+		if i + 1 < len(ratio_index):
+			down_price = ratio_index[i]
+			up_price = ratio_index[i + 1]
+			if down_price <= now_price and up_price >= now_price:
+				now_index = i
+				break
+	now_ratio = price_ratio_se.iloc[i]
+	before_ratio = price_ratio_se.iloc[:i].sum()
+	after_ratio = price_ratio_se.iloc[i+1:].sum()
+	print(i,ratio_index[i], now_ratio, before_ratio, after_ratio)
+	print(now_ratio + before_ratio + after_ratio)
+	sec_len = 5
+	low_price_list = []
+	upper_price_list = []
+	sum_ratio_list = []
+	for i in range(0,len(ratio_index),sec_len):
+		if i + sec_len < len(ratio_index):
+			low_price_list.append(ratio_index[i])
+			upper_price_list.append(ratio_index[i+sec_len])
+			sum_ratio_list.append(price_ratio_se.iloc[i:i+sec_len].sum())
+	sec_df = DataFrame({'low':low_price_list,'upper':upper_price_list,'sum':sum_ratio_list})
+	print(sec_df)
 	price_ratio_se.plot('bar')
-	plt.show()
+	#plt.show()
 	#print(price_ratio_se)
 
 if __name__ == '__main__':
