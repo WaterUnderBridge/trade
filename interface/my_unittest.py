@@ -46,7 +46,8 @@ def pd_query_test():
 	pd_query = pd_test.query('a > 0')
 	assert(True == is_equal(pd_test.iloc[1,0],-2))
 	assert(True == is_equal(pd_query.iloc[1,0],3))
-	#print(pd_query)
+	max_label = pd_test['b'].idxmax()
+	assert('line2' == max_label)
 
 def add_test():
 	test_equal(3, add(1,2))
