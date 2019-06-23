@@ -6,6 +6,7 @@ import matplotlib.pyplot as plt
 import statsmodels.api as sm
 import math
 import tushare as ts
+import time
 
 global g_sz_file
 g_sz_file = '../../git_file/szdata/szstudy.csv'
@@ -107,10 +108,25 @@ class StockAnalysis:
 		ret = ts.get_stock_basics()
 		mk_val = ret['outstanding'][m_stock]*100000000/100    #(手)
 		return mk_val
-	def _get_df(self,m_stock):
-		ret_pd = ts.get_hist_data(m_stock,start = '2018-06-16')
+	def _get_df_by_date(self,m_stock,start_str,end_str):
+		in_mk_val = self._get_market_value(m_stock)
+		ret_pd = ts.get_hist_data(m_stock,start = start_str, end = end_str)
 		new_pd = ret_pd.sort_index(ascending = True)
+		new_pd['turn_over'] = new_pd['volume']/in_mk_val  #转换为换手率
 		return new_pd
+	def _get_df_current(self,m_stock):
+		time_now = time.time()
+		time_start = time_now - 24*3600*300
+		str_time_start = time.strftime("%Y-%m-%d", time.localtime(time_start))
+		str_time_end = time.strftime("%Y-%m-%d", time.localtime(time_now))
+		return self._get_df_by_date(m_stock,str_time_start,str_time_end)
+	def _get_df_days_before(self,m_stock,before_days):
+		time_now = time.time()
+		time_start = time_now - 24*3600*300
+		str_time_start = time.strftime("%Y-%m-%d", time.localtime(time_start))
+		time_end = time_now - 24*3600*before_days
+		str_time_end = time.strftime("%Y-%m-%d", time.localtime(time_end))
+		return self._get_df_by_date(m_stock,str_time_start,str_time_end)
 	def _create_init_ratio_se(self, data_df):
 		start_price = data_df['low'].min()
 		end_price = data_df['high'].max()
@@ -207,20 +223,24 @@ class StockAnalysis:
 			max_ratio = sec_df.ix[max_line]['radio_sum']
 			if max_ratio >= target_ratio:
 				print("筹码集中度:集中度%.2f%%, 区间%.2f~%.2f"%(max_ratio*100, sec_df.ix[max_line]['low'],sec_df.ix[max_line]['upper']))
+				return sec_df.ix[max_line]['low']
 	def _chip_distribution(self, in_stock):
-		data_df = self._get_df(in_stock)
-		in_mk_val = self._get_market_value(in_stock)
-		data_df['turn_over'] = data_df['volume']/in_mk_val  #转换为换手率
-		self._calc_chip(data_df)
+		data_df = self._get_df_current(in_stock)
+		low_price_now = self._calc_chip(data_df)
+		before_days = 30
+		data_before = self._get_df_days_before(in_stock, before_days)
+		low_price_before = self._calc_chip(data_before)
+		print("low_price_now = %.3f, low_price_before = %.3f,low_percent = %.3f%%"%(low_price_now, low_price_before, (low_price_before - low_price_now)/low_price_before*100))
 	def _calc_chip(self, in_df):
 		price_ratio_se = self._create_init_ratio_se(in_df)
 		price_ratio_se = self._update_ratio_se_everyday(in_df, price_ratio_se)
 		now_price = in_df['close'][-1]
 		self._calc_current_ratio(now_price, price_ratio_se)
-		self._chip_focus(price_ratio_se)
+		low_price = self._chip_focus(price_ratio_se)
 		price_ratio_se.plot('bar')
 		plt.show()
 		#print(price_ratio_se)
+		return low_price
 	
 def stock_analysis_test():
 	analysis_tool = StockAnalysis()
