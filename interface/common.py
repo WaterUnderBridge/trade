@@ -101,46 +101,49 @@ def float_is_equal(a,b):
 		return False
 
 class StockAnalysis:
-	def __init__(self, m_stock):
-		self.now_stock = m_stock
-		self._get_market_value(m_stock)
-		self._get_df()
+	def __init__(self):
+		pass
 	def _get_market_value(self,m_stock):
 		ret = ts.get_stock_basics()
-		self.mk_val = ret['outstanding'][m_stock]*100000000/100#(手)
-	def _get_df(self):
-		ret_pd = ts.get_hist_data(self.now_stock,start = '2018-06-16')
+		mk_val = ret['outstanding'][m_stock]*100000000/100    #(手)
+		return mk_val
+	def _get_df(self,m_stock):
+		ret_pd = ts.get_hist_data(m_stock,start = '2018-06-16')
 		new_pd = ret_pd.sort_index(ascending = True)
-		self.day_pd = new_pd
-	def _chip_distribution(self):
-		df = self.day_pd
-		df['volume'] = df['volume']/self.mk_val
-		close_se = df['close']
-		start_price = close_se.min()*0.75
-		end_price = close_se.max()*1.5
-		price_num = 30    #点的个数
-		section_num = price_num - 1    #price_num - 1为区间的个数
+		return new_pd
+	def _create_init_ratio_se(self, data_df):
+		start_price = data_df['low'].min()
+		end_price = data_df['high'].max()
+		section_div = 30
+		price_div = section_div + 1    #点的个数
+		section_num = section_div + 1    #增加一个区间包含最大价格(该区间也占用筹码)
+		price_num = price_div + 1;    #32
 		inter_len = float_div(end_price - start_price, section_num)    #区间长度
-		inter_len = round(inter_len,2)
+		inter_len = round(inter_len,4)
 		price_ratio_dict = {}
 		for i in range(price_num):
 			if i == price_num - 1:
 				price_ratio_dict[start_price + inter_len*i] = 0    #终点用于计算
 			else:
-				price_ratio_dict[start_price + inter_len*i] = float_div(1, section_num)
+				price_ratio_dict[start_price + inter_len*i] = float_div(1, section_num)  #每个区间起点用于存储数值
 		price_ratio_se = Series(price_ratio_dict)    #价格区间以起始值作为代表
 		m_sum = price_ratio_se.sum()
-		#print(price_ratio_se)
-		volume_index = df.index
+		assert(float_is_equal(1,m_sum))
+		return price_ratio_se
+	def _update_ratio_se_everyday(self, data_df, price_ratio_se):
+		close_se = data_df['close']
+		start_price = data_df['low'].min()
+		end_price = data_df['high'].max()
+		volume_index = data_df.index
 		ratio_index = price_ratio_se.index
 		for one_day in volume_index:    #计算每日筹码转移
-			high_price = df.loc[one_day,'high']
-			low_price = df.loc[one_day,'low']
-			one_ratio = df.loc[one_day,'volume']
+			high_price = data_df.loc[one_day,'high']
+			low_price = data_df.loc[one_day,'low']
+			one_ratio = data_df.loc[one_day,'turn_over']
 			if one_ratio >= 1:
 				print('one_ratio error')
 			if high_price > end_price or low_price < start_price:
-				print("price scope error!")
+				print("price scope error!high_price = %.4f, low_price = %.4f, end_price = %.4f, start_price = %.4f"%(high_price, low_price, end_price, start_price))
 			scope_dict = {}
 			for i,single_price in enumerate(ratio_index):    #计算每日筹码转入占比
 				if i + 1 < len(ratio_index):
@@ -168,7 +171,9 @@ class StockAnalysis:
 			price_ratio_se = price_ratio_se + scope_ratio
 		if False == float_is_equal(price_ratio_se.sum(), 1):    #一致性约束
 				print("price_ratio_se error!")
-		now_price = close_se[-1]
+		return price_ratio_se
+	def _calc_current_ratio(self, now_price, price_ratio_se):
+		ratio_index = price_ratio_se.index
 		now_index = 0
 		for i,single_price in enumerate(ratio_index):
 			if i + 1 < len(ratio_index):
@@ -182,12 +187,14 @@ class StockAnalysis:
 		after_ratio = price_ratio_se.iloc[i+1:].sum()
 		print("筹码分布:当前价格区间%.2f--%.2f, 当前筹码%.3f%%, 下部筹码%.3f%%, 上部筹码%.3f%%"%(ratio_index[i], ratio_index[i+1], now_ratio*100, before_ratio*100, after_ratio*100))
 		assert(float_is_equal(1,now_ratio + before_ratio + after_ratio))  #一致性检查
+	def _chip_focus(self, price_ratio_se):
 		low_price_list = []
 		upper_price_list = []
 		sum_ratio_list = []
 		target_ratio = 0.85
 		max_ratio = 0
 		sec_len = 0
+		ratio_index = price_ratio_se.index
 		while max_ratio < target_ratio:
 			sec_len += 1
 			for i in range(len(ratio_index)):
@@ -200,13 +207,24 @@ class StockAnalysis:
 			max_ratio = sec_df.ix[max_line]['radio_sum']
 			if max_ratio >= target_ratio:
 				print("筹码集中度:集中度%.2f%%, 区间%.2f~%.2f"%(max_ratio*100, sec_df.ix[max_line]['low'],sec_df.ix[max_line]['upper']))
+	def _chip_distribution(self, in_stock):
+		data_df = self._get_df(in_stock)
+		in_mk_val = self._get_market_value(in_stock)
+		data_df['turn_over'] = data_df['volume']/in_mk_val  #转换为换手率
+		self._calc_chip(data_df)
+	def _calc_chip(self, in_df):
+		price_ratio_se = self._create_init_ratio_se(in_df)
+		price_ratio_se = self._update_ratio_se_everyday(in_df, price_ratio_se)
+		now_price = in_df['close'][-1]
+		self._calc_current_ratio(now_price, price_ratio_se)
+		self._chip_focus(price_ratio_se)
 		price_ratio_se.plot('bar')
 		plt.show()
 		#print(price_ratio_se)
-
+	
 def stock_analysis_test():
-	analysis_tool = StockAnalysis('600518')
-	analysis_tool._chip_distribution()
+	analysis_tool = StockAnalysis()
+	analysis_tool._chip_distribution('600518')
 
 def ts_test():
 	ret_pd = ts.get_hist_data('600518',start = '2018-06-16')
