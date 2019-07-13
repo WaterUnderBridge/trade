@@ -53,11 +53,15 @@ def add_test():
 	test_equal(3, add(1,2))
 	test_not_equal(4, add(1,2))
 
+def StockAnalysis_test():
+	analysis_tool = StockAnalysis()
+
 def test_cases():
 	add_test()
 	se_sort_test()
 	pd_shift_test()
 	pd_query_test()
+	StockAnalysis_test()
 
 if __name__ == '__main__':
 	test_cases()
