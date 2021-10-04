@@ -31,7 +31,7 @@ The key fingerprint is:
 
 三、 开始使用github
 1.获取源码：
-$ git clone git@github.com:billyanyteen/github-services.git
+$ git remote add  origin git@github.com:WaterUnderBridge/trade.git
 2.这样你的机器上就有一个repo了。
 3.git于svn所不同的是git是分布式的，没有服务器概念。所有的人的机器上都有一个repo，每次提交都是给自己机器的repo
 仓库初始化：
