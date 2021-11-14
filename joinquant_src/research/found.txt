@@ -1,0 +1,39 @@
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+mpl.rcParams['font.sans-serif'] = ['KaiTi']
+mpl.rcParams['font.serif'] = ['KaiTi']
+
+q = query(
+    income.total_operating_revenue,income.total_operating_cost,income.sale_expense,income.administration_expense,
+    income.financial_expense,income.fair_value_variable_income,income.investment_income,income.operating_profit,
+    income.np_parent_company_owners
+).filter(
+    valuation.code == '601318.XSHG'
+)
+ret_df = pd.DataFrame()
+key_list = ['2021q2','2021q1','2020q4','2020q3','2020q2','2020q1','2019q4','2019q3','2019q2','2019q1']
+len_list = len(key_list)
+for i in range(len_list):
+    df = get_fundamentals(q, statDate = key_list[i])
+    df_new = df.T
+    df_new.loc['not_operating_income'] = df_new.loc['fair_value_variable_income'] + df_new.loc['investment_income']
+    df_new.loc['subnone_operating_profit'] = df_new.loc['total_operating_revenue'] - df_new.loc['total_operating_cost']
+    df_new.columns = [key_list[i]]
+    df_new = df_new/100000000
+    if 0 == len(ret_df.index):
+        ret_df = df_new
+    else:
+        ret_df = pd.concat([ret_df, df_new],axis = 1)
+#write_file('df.csv', ret_df.to_csv(), append=False) #写到文件中
+'''
+with pd.plotting.plot_params.use('x_compat', True):#color=r,g,b,y,k,
+    ret_df.loc['total_operating_revenue'].plot(color = 'r',legend=True)
+    ret_df.loc['total_operating_cost'].plot(color = 'g',legend=True)
+'''
+with pd.plotting.plot_params.use('x_compat', True):#color=r,g,b,y,k,
+    ret_df.loc['operating_profit'].plot(color = 'r',legend=True)
+    ret_df.loc['np_parent_company_owners'].plot(color = 'g',legend=True)
+    ret_df.loc['subnone_operating_profit'].plot(color = 'k',legend=True)
+    ret_df.loc['not_operating_income'].plot(color = 'b',legend=True)

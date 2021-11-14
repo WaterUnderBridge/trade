@@ -1,0 +1,45 @@
+import pandas as pd
+import seaborn as sns
+import matplotlib.pyplot as plt
+import matplotlib as mpl
+mpl.rcParams['font.sans-serif'] = ['KaiTi']
+mpl.rcParams['font.serif'] = ['KaiTi']
+
+#历史PE
+date_list = []
+ty = 10
+for year in range(ty):
+    for i in range(12):
+        tmp_year = 2021-ty+year+1
+        tmp_month = i+1
+        if tmp_year == 2021 and tmp_month >= 11:
+            continue
+        date_single = "%d-%02d-28" % (tmp_year, tmp_month)
+        #print(date_single)
+        date_list.append(date_single)
+#print(date_list)
+
+#date_list = ['2021-10-15','2020-10-15','2019-10-15','2018-10-15','2017-10-15','2016-10-15']
+ret_list_50 = ['601668.XSHG']
+pe_ret_list = []
+pb_ret_list = []
+for date_item in date_list:
+    df = get_fundamentals(query(
+        valuation.code, valuation.pe_ratio,valuation.pb_ratio,
+    ).filter(
+        valuation.code.in_(ret_list_50),
+        valuation.pe_ratio < 1000,
+    ), date=date_item)
+    pe_val = round(df['pe_ratio'][0], 3)
+    if pe_val < 0:
+        pe_val = 0
+    pb_val = round(df['pb_ratio'][0], 3)
+    pe_ret_list.append(pe_val)
+    pb_ret_list.append(pb_val)
+data = {"pe":pe_ret_list,"pb":pb_ret_list}
+ret_df = pd.DataFrame(data,index = date_list)
+#print(ret_df)
+#print(pb_ret_list)
+with pd.plotting.plot_params.use('x_compat', True):#color=r,g,b,y,k,
+    #ret_df['pe'].plot(color = 'r',legend=True)
+    ret_df['pb'].plot(color = 'g',legend=True)
